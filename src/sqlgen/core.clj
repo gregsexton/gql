@@ -43,7 +43,8 @@
                 (~'not= [a# b#] `[:<> ~(keywordize a#) ~(keywordize b#)])
                 (~'not [a#] `[:not ~(keywordize a#)])
                 (~'json-extract-scalar [from# path#]
-                 `[[:json_extract_scalar ~(keywordize from#) ~path#]])]
+                 `[[:json_extract_scalar ~(keywordize from#) ~path#]])
+                (~'rand [] [[:rand]])]
                ~expr))
 
 (defmacro table [tbl]
@@ -54,6 +55,10 @@
 
 (defmacro where [ds & exprs]
   `(precedence-merge ~ds {:where (expand-expr (~'and ~@exprs))}))
+
+(defmacro order-by [ds & exprs]
+  `(m/macrolet [(~'desc [arg#] `[~(keywordize arg#) :desc])]
+               (precedence-merge ~ds {:order-by (expand-expr [~@(map keywordize exprs)])})))
 
 ;;; allowing referencing just declared vars by substituting. what's
 ;;; the tradeoff compared to nesting? is an engine smart enough not to
@@ -68,9 +73,14 @@
                                                    ~(mapv named-expr pairs)))]
     `(expand-expr ~(m/mexpand-all update-form))))
 
+(defn limit [ds limit]
+  (precedence-merge ds {:limit limit}))
+
 ;;; TODO: grouping
 ;;; TODO: joins
 ;;; TODO: allow using variables - probably need to use binding?
+;;; TODO: slice sample and other slices
+;;; TODO: count
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID>")
            (or flag-col
@@ -79,10 +89,16 @@
            (not= (json-extract-scalar data "$.status") nil))
     (select data (id :as ticket-id))
     (where (= id "1234"))               ;this demonstrates precedence
+    (where flag-col)               ;this demonstrates just using a col
     (mutate topic (json-extract-scalar data "$.topic")
             status (json-extract-scalar data "$.status")
             is-closed (= status "closed")) ;note: referring to status
     (mutate not-is-closed (not is-closed))  ;TODO: this does not work currently
+    (order-by is-closed
+              (desc status)
+              (rand)
+              (desc (json-extract-scalar data "$.topic")))
+    (limit 100)
     (sql/format :inline true))
 
 ;;; how to represent the table metadata and pass that along?
