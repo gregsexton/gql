@@ -101,14 +101,24 @@
 ;;; this will not work well under groups. mutate adds to the existing
 ;;; but summarize replaces
 
+;;; TODO: inner join - should auto select vars and print to stderr what we're using. should allow choosing the vars
+;;; TODO: left join
+;;; TODO: would be great to allow more than just =
+
+;;; TODO: slice sample and other slices
+;;; TODO: select preds e.g. not this, starts-with etc
+;;; TODO: major clean up
+;;; TODO: wrap up a read-eval-print loop from stdin with pretty print option
+;;; TODO: with
+
 ;;; TODO: grouping -- filter/where - having?
 ;;; TODO: grouping -- mutate - window funcs
 ;;; TODO: grouping -- order by - probably should influence the order by on the window function?
-;;; TODO: joins
+                                        ; TODO grouping -- slice functions
+
 ;;; TODO: allow using variables - probably need to use binding?
-;;; TODO: slice sample and other slices
-;;; TODO: select preds e.g. not this, starts-with etc
-;;; TODO: with
+                                        ; just don't? consider out of scope
+
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID>")
            (or flag-col
@@ -195,3 +205,51 @@
              "backup"))
 (where {} (= (json-extract-scalar data "$.topic")
              another-col))
+
+;;; TODO: need to allow selecting join criteria - a subset at least - same as where: wrap in and
+;;; TODO: need to allow suffixing dup cols
+
+(defn- join [join-type-kw query1 query2]
+  (let [q1-cols (get-selection-cols query1)
+        q2-cols (get-selection-cols query2)
+        scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))]
+    {:select (concat
+              (mapv (partial scope-col :q1) q1-cols)
+              (->> q2-cols
+                   (remove (set q1-cols)) ; used to maintain order
+                   (mapv (partial scope-col :q2))))
+     :from [[query1 :q1]]
+     join-type-kw [[query2 :q2]
+                   (->> (clojure.set/intersection (set q1-cols) (set q2-cols))
+                        (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
+                        (into [:and]))]}))
+
+(def inner-join (partial join :inner-join))
+(def left-join (partial join :left-join))
+
+(-> (inner-join (-> (table src_wa_fastdesk_tickets)
+                    (select a b c))
+                (-> (table src_wa_fastdesk_tickets)
+                    (select a d c)))
+    (sql/format :inline true))
+
+(let [counts (-> (table src_wa_fastdesk_tickets)
+                 (group [topic] (summarize n (count))))]
+  (-> (table src_wa_fastdesk_tickets)
+      (where (> ds "<DATEID-2>"))
+      (select topic data)
+      (inner-join counts)
+      (sql/format :inline true)))             ;this is how you break queries out and organise them
+
+(-> (table src_wa_fastdesk_tickets)
+    (where (> ds "<DATEID-2>"))
+    (select topic data)
+    (inner-join (-> (table src_wa_fastdesk_tickets)
+                    (group [topic] (summarize n (count)))))   ;this is inlining
+    (sql/format :inline true))
+
+(-> (table src_wa_fastdesk_tickets)
+    (where (> ds "<DATEID-2>"))
+    (select topic data)
+    (inner-join (table foo))           ;this is how you join with an existing table
+    (sql/format :inline true))
