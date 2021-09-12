@@ -101,9 +101,7 @@
 ;;; this will not work well under groups. mutate adds to the existing
 ;;; but summarize replaces
 
-;;; TODO: inner join - should auto select vars and print to stderr what we're using. should allow choosing the vars
-;;; TODO: left join
-;;; TODO: would be great to allow more than just =
+;;; TODO: joins: would be great to allow more than just =
 
 ;;; TODO: slice sample and other slices
 ;;; TODO: select preds e.g. not this, starts-with etc
@@ -131,7 +129,7 @@
     (mutate topic (json-extract-scalar data "$.topic")
             status (json-extract-scalar data "$.status")
             is-closed (= status "closed")) ;note: referring to status
-    (mutate not-is-closed (not is-closed))  ;TODO: this does not work currently
+    (mutate not-is-closed (not is-closed))  ;TODO: this does not work currently - refers to previous mutate
     (order-by is-closed
               (desc status)
               (rand)
@@ -206,26 +204,36 @@
 (where {} (= (json-extract-scalar data "$.topic")
              another-col))
 
-;;; TODO: need to allow selecting join criteria - a subset at least - same as where: wrap in and
-;;; TODO: need to allow suffixing dup cols
-
-(defn- join [join-type-kw query1 query2]
+(defn- join [join-type-kw query1 query2 join-cols suffix]
   (let [q1-cols (get-selection-cols query1)
         q2-cols (get-selection-cols query2)
-        scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))]
+        scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
+        rename-col (fn [potential-clashes table col]
+                     [(scope-col table col)
+                      (if ((set potential-clashes) col)
+                        (keyword (format "%s%s" (name col) suffix))
+                        col)])]
     {:select (concat
-              (mapv (partial scope-col :q1) q1-cols)
+              (mapv (partial rename-col [] :q1) q1-cols)
               (->> q2-cols
-                   (remove (set q1-cols)) ; used to maintain order
-                   (mapv (partial scope-col :q2))))
+                   (remove (set (or join-cols q1-cols))) ; used to maintain order
+                   (mapv (partial rename-col q1-cols :q2))))
      :from [[query1 :q1]]
      join-type-kw [[query2 :q2]
-                   (->> (clojure.set/intersection (set q1-cols) (set q2-cols))
+                   (->> (or join-cols (clojure.set/intersection (set q1-cols) (set q2-cols)))
                         (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
                         (into [:and]))]}))
 
-(def inner-join (partial join :inner-join))
-(def left-join (partial join :left-join))
+;;; TODO: extract common macro
+(defmacro inner-join [query1 query2 & {:keys [using suffix]}]
+  (let [q1 (m/mexpand-all query1)
+        q2 (m/mexpand-all query2)]
+    `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+
+(defmacro left-join [query1 query2 & {:keys [using suffix]}]
+  (let [q1 (m/mexpand-all query1)
+        q2 (m/mexpand-all query2)]
+    `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
 
 (-> (inner-join (-> (table src_wa_fastdesk_tickets)
                     (select a b c))
@@ -244,12 +252,21 @@
 (-> (table src_wa_fastdesk_tickets)
     (where (> ds "<DATEID-2>"))
     (select topic data)
-    (inner-join (-> (table src_wa_fastdesk_tickets)
-                    (group [topic] (summarize n (count)))))   ;this is inlining
+    (left-join (-> (table src_wa_fastdesk_tickets)
+                   (group [topic] (summarize n (count)))))   ;this is inlining
     (sql/format :inline true))
 
 (-> (table src_wa_fastdesk_tickets)
     (where (> ds "<DATEID-2>"))
     (select topic data)
     (inner-join (table foo))           ;this is how you join with an existing table
+    (sql/format :inline true))
+
+(-> (table src-wa-fastdesk-tickets)
+    (select id data)
+    (left-join (-> (table src-wa-fastdesk-tickets)
+                   (where (> id 5))
+                   (select id data))
+               :using [id]
+               :suffix "_filtered")
     (sql/format :inline true))
