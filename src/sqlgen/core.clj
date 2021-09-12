@@ -41,14 +41,24 @@
                 (~'or [& args#] `[:or ~@(map keywordize args#)])
                 (~'= [a# b#] `[:= ~(keywordize a#) ~(keywordize b#)])
                 (~'not= [a# b#] `[:<> ~(keywordize a#) ~(keywordize b#)])
+                (~'> [a# b#] `[:> ~(keywordize a#) ~(keywordize b#)])
                 (~'not [a#] `[:not ~(keywordize a#)])
                 (~'json-extract-scalar [from# path#]
                  `[[:json_extract_scalar ~(keywordize from#) ~path#]])
-                (~'rand [] [[:rand]])]
+                (~'approx-distinct [a#]
+                 `[[:approx_distinct ~(keywordize a#)]])
+                (~'rand [] [[:rand]])
+                (~'count [] [[:count :*]])
+                (~'count-if [a#] `[[:count_if ~(keywordize a#)]])
+                (~'sum [a#] `[[:sum ~(keywordize a#)]])
+                (~'/ [a# b#] `[:/ ~(keywordize a#) ~(keywordize b#)])]
                ~expr))
 
+;;; TODO: should always have a select and should lookup all the cols
+;;; TODO: allow specifying partitions? so we get the base with a where ds straight away?
 (defmacro table [tbl]
-  `{:from [~(keyword tbl)]})
+  `{:from [~(keyword tbl)]
+    :select [:*]})
 
 (defmacro select [ds & exprs]
   `(precedence-merge ~ds {:select [~@(map keyword-or-alias exprs)]}))
@@ -76,11 +86,29 @@
 (defn limit [ds limit]
   (precedence-merge ds {:limit limit}))
 
-;;; TODO: grouping
+;;; TODO: naming columns the same as functions causes an infinite loop e.g. sum (sum foo)
+;;; TODO: would be cool to auto-name, probably need to change the form for this
+(defmacro summarize [ds & forms]
+  (let [pairs (partition 2 forms)
+        replace-form `(assoc-in ~ds [:select]
+                                (m/symbol-macrolet [~@forms]
+                                                   ~(mapv named-expr pairs)))]
+    `(expand-expr ~(m/mexpand-all replace-form))))
+
+;;; diff between summarise and select and mutate: select is about
+;;; preds to match existing stuff. summarise is a different form to
+;;; name a column with an agg function. could possibly use mutate but
+;;; this will not work well under groups. mutate adds to the existing
+;;; but summarize replaces
+
+;;; TODO: grouping -- filter/where - having?
+;;; TODO: grouping -- mutate - window funcs
+;;; TODO: grouping -- order by - probably should influence the order by on the window function?
 ;;; TODO: joins
 ;;; TODO: allow using variables - probably need to use binding?
 ;;; TODO: slice sample and other slices
-;;; TODO: count
+;;; TODO: select preds e.g. not this, starts-with etc
+;;; TODO: with
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID>")
            (or flag-col
@@ -99,14 +127,66 @@
               (rand)
               (desc (json-extract-scalar data "$.topic")))
     (limit 100)
+    (sql/format :inline true :pretty true)
+    println)
+
+;;; groups should basically just call existing funcs with a group-by
+;;; tacked on ignoring precedence and the group names in the select -
+;;; I think
+
+;;; TODO: allow creating cols to group on?
+(defmacro group [ds groups & forms]
+  `(-> ~ds
+       ~@forms
+       (update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
+       (merge {:group-by ~(mapv keywordize groups)})))
+
+(defmacro count-groups [ds & groups]
+  `(-> ~ds
+       (group [~@groups]
+              (summarize ~'n (~'count)))
+       (order-by (~'desc ~'n))))
+
+(count-groups {:select [:foo :bar]}
+              foo)
+
+(sql/format (group {:select [:foo :bar]}
+                   [a b]
+                   (summarize n (count))))
+
+(-> (table src_wa_fastdesk_tickets)
+    (where (= ds "<DATEID>")
+           (or flag-col
+               (= (json-extract-scalar data "$.topic")
+                  "backup"))
+           (not= (json-extract-scalar data "$.status") nil))
+    (mutate topic (json-extract-scalar data "$.topic")
+            status (json-extract-scalar data "$.status")
+            is-closed (= status "closed"))
+    (group [topic status]
+           (summarize n (count)
+                      n_closed (count-if is-closed)))
+    (sql/format :inline true :pretty true)
+    (get 0)
+    println)
+
+(-> (table src_wa_fastdesk_tickets)
+    (where (= ds "<DATEID-2>"))
+    (mutate topic (json-extract-scalar data "$.topic"))
+    (group [topic] (summarize n (count)))
+    (where (> n 100))
+    (summarize n (count))
     (sql/format :inline true))
 
-;;; how to represent the table metadata and pass that along?
+(-> (table src_wa_fastdesk_tickets)
+    (where (= ds "<DATEID-2>"))
+    (mutate topic (json-extract-scalar data "$.topic"))
+    (count-groups topic)
+    (sql/format :inline true))
 
 (mutate {:select []}
         status (json-extract-scalar data "$.status")
         is-closed (= status "closed"))
-
 (expand-expr (json-extract-scalar 5 4))
 (expand-expr (json-extract-scalar foo 4))
 (expand-expr (= 5 4))
