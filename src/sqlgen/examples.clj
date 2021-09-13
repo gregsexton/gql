@@ -166,7 +166,4 @@
                      (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
                  :using [user-id])
       (left-join tickets :using [ticket-id])
-      (left-join site-events :using [whatsapp-analytic-id])
-      (sql/format :inline true)
-      (get 0)
-      println))
+      (left-join site-events :using [whatsapp-analytic-id])))

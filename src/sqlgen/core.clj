@@ -1,7 +1,8 @@
 (ns sqlgen.core
   (:require [honey.sql :as sql]
             [clojure.tools.macro :as m]
-            [clojure.walk :as walk])
+            [clojure.walk :as walk]
+            [clojure.set :as sets])
   (:gen-class))
 
 (defn get-selection-cols [query]
@@ -136,7 +137,7 @@
               (summarize ~'n (~'count)))
        (order-by (~'desc ~'n))))
 
-(defn- join [join-type-kw query1 query2 join-cols suffix]
+(defn join [join-type-kw query1 query2 join-cols suffix]
   (let [q1-cols (get-selection-cols query1)
         q2-cols (get-selection-cols query2)
         scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
@@ -152,7 +153,7 @@
                    (mapv (partial rename-col q1-cols :q2))))
      :from [[query1 :q1]]
      join-type-kw [[query2 :q2]
-                   (->> (or join-cols (clojure.set/intersection (set q1-cols) (set q2-cols)))
+                   (->> (or join-cols (sets/intersection (set q1-cols) (set q2-cols)))
                         (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
                         (into [:and]))]}))
 
@@ -169,3 +170,12 @@
 
 ;;; TODO: aim for this: does R have sql formatting? that would be cool.
 ;;; sql_gen("clojure code") %>% presto('whatsapp') -> 
+
+
+(defn -main [& args]
+  (binding [*ns* (find-ns 'sqlgen.core)]
+    (-> (read)
+        eval
+        (sql/format :inline true)
+        (get 0)
+        println)))
