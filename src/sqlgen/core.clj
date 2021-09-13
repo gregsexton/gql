@@ -90,10 +90,11 @@
 ;;; TODO: would be cool to auto-name, probably need to change the form for this
 (defmacro summarize [ds & forms]
   (let [pairs (partition 2 forms)
-        replace-form `(assoc-in ~ds [:select]
-                                (m/symbol-macrolet [~@forms]
-                                                   ~(mapv named-expr pairs)))]
-    `(expand-expr ~(m/mexpand-all replace-form))))
+        replace-form `{:select (m/symbol-macrolet [~@forms]
+                                                  ~(mapv named-expr pairs))}]
+    ;; we use precedence-merge to end up wrapping the query as the
+    ;; select may have been mutated
+    `(precedence-merge ~ds (expand-expr ~(m/mexpand-all replace-form)))))
 
 ;;; diff between summarise and select and mutate: select is about
 ;;; preds to match existing stuff. summarise is a different form to
@@ -149,14 +150,14 @@
        (update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
        (merge {:group-by ~(mapv keywordize groups)})))
 
-(defmacro count-groups [ds & groups]
+(defmacro count-by [ds & groups]
   `(-> ~ds
        (group [~@groups]
               (summarize ~'n (~'count)))
        (order-by (~'desc ~'n))))
 
-(count-groups {:select [:foo :bar]}
-              foo)
+(count-by {:select [:foo :bar]}
+          foo)
 
 (sql/format (group {:select [:foo :bar]}
                    [a b]
@@ -189,7 +190,7 @@
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID-2>"))
     (mutate topic (json-extract-scalar data "$.topic"))
-    (count-groups topic)
+    (count-by topic)
     (sql/format :inline true))
 
 (mutate {:select []}
