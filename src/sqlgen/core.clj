@@ -149,11 +149,13 @@
     {:select (concat
               (mapv (partial rename-col [] :q1) q1-cols)
               (->> q2-cols
-                   (remove (set (or join-cols q1-cols))) ; used to maintain order
+                   (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
                    (mapv (partial rename-col q1-cols :q2))))
      :from [[query1 :q1]]
      join-type-kw [[query2 :q2]
-                   (->> (or join-cols (sets/intersection (set q1-cols) (set q2-cols)))
+                   (->> (if-not (empty? join-cols)
+                          join-cols
+                          (sets/intersection (set q1-cols) (set q2-cols)))
                         (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
                         (into [:and]))]}))
 

@@ -115,10 +115,8 @@
       (left-join (-> (table wa-support-funnel)
                      (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
                  :using [user-id])
-      (left-join tickets :using [ticket-id]) ;TODO: need to provide the using - shouldn't have to - and I want the print to stderr
-      (sql/format :inline true)
-      (get 0)
-      println))
+      (left-join tickets)
+      (sql/format :inline true)))
 
 (let [users (-> (table wa-support-funnel)
                 (where (>= ds "<DATEID-14>"))
@@ -167,3 +165,9 @@
                  :using [user-id])
       (left-join tickets :using [ticket-id])
       (left-join site-events :using [whatsapp-analytic-id])))
+
+(-> (table foo)
+    (select a b)
+    (inner-join (-> (table bar)
+                    (select a c)))
+    (sql/format :inline true))
