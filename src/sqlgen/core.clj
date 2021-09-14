@@ -32,10 +32,15 @@
         (list? form) [(keyword (first form)) (keyword (nth form 2))]  ;:as should be 2nd
         :else form))
 
-(defn named-expr [pair]
-  (let [col (first pair)
-        expr (second pair)]
-    [expr (keyword col)]))
+(defn named-expr
+  ([pair]
+   (let [col (first pair)
+         expr (second pair)]
+     [expr (keyword col)]))
+  ([over-params pair]
+   (let [col (first pair)
+         expr (second pair)]
+     [expr over-params (keyword col)])))
 
 (defmacro expand-expr [expr]
   `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
@@ -44,6 +49,8 @@
                 (~'not= [a# b#] `[:<> ~(keywordize a#) ~(keywordize b#)])
                 (~'> [a# b#] `[:> ~(keywordize a#) ~(keywordize b#)])
                 (~'>= [a# b#] `[:>= ~(keywordize a#) ~(keywordize b#)])
+                (~'< [a# b#] `[:< ~(keywordize a#) ~(keywordize b#)])
+                (~'<= [a# b#] `[:<= ~(keywordize a#) ~(keywordize b#)])
                 (~'not [a#] `[:not ~(keywordize a#)])
                 (~'json-extract-scalar [from# path#]
                  `[[:json_extract_scalar ~(keywordize from#) ~path#]])
@@ -53,6 +60,11 @@
                 (~'count [] [[:count :*]])
                 (~'count-if [a#] `[[:count_if ~(keywordize a#)]])
                 (~'sum [a#] `[[:sum ~(keywordize a#)]])
+                (~'avg [a#] `[[:avg ~(keywordize a#)]])
+                (~'coalesce [& args#] `[:coalesce ~@(map keywordize args#)])
+                (~'+ [a# b#] `[:+ ~(keywordize a#) ~(keywordize b#)])
+                (~'- [a# b#] `[:- ~(keywordize a#) ~(keywordize b#)])
+                (~'* [a# b#] `[:* ~(keywordize a#) ~(keywordize b#)])
                 (~'/ [a# b#] `[:/ ~(keywordize a#) ~(keywordize b#)])]
                ~expr))
 
@@ -85,6 +97,15 @@
                                                    ~(mapv named-expr pairs)))]
     `(expand-expr ~(m/mexpand-all update-form))))
 
+(defmacro mutate-grouped [ds groups & forms]
+  (let [pairs (partition 2 forms)
+        update-form `(update-in ~ds [:select] concat
+                                (m/symbol-macrolet [~@forms]
+                                                   [[[:over ~@(mapv (partial named-expr
+                                                                             {:partition-by (mapv keywordize groups)})
+                                                                    pairs)]]]))]
+    `(expand-expr ~(m/mexpand-all update-form))))
+
 (defn limit [ds limit]
   (precedence-merge ds {:limit limit}))
 
@@ -104,80 +125,87 @@
 ;;; this will not work well under groups. mutate adds to the existing
 ;;; but summarize replaces
 
-;;; TODO: joins: would be great to allow more than just =
-
 ;;; TODO: slice sample and other slices
 ;;; TODO: select preds e.g. not this, starts-with etc
 ;;; TODO: major clean up
-;;; TODO: wrap up a read-eval-print loop from stdin with pretty print option
 ;;; TODO: with
+
+;;; TODO: joins: would be great to allow more than just =
 
 ;;; TODO: grouping -- filter/where - having?
 ;;; TODO: grouping -- mutate - window funcs
 ;;; TODO: grouping -- order by - probably should influence the order by on the window function?
-                                        ; TODO grouping -- slice functions
+;;; TODO: grouping -- slice functions
 
-;;; TODO: allow using variables - probably need to use binding?
-                                        ; just don't? consider out of scope
+;;; TODO: allow using variables - probably need to use binding? just don't? consider out of scope
+
+(defn rewrite-for-group [groups form]
+  (if (list? form)
+    (let [[f & args :as whole] form]
+      (cond (= f 'mutate) `(mutate-grouped ~groups ~@args)
+            :else whole))
+    form))
+
+(defn contains-summarize [forms]
+  (->> forms
+       (map first)
+       (some #{'summarize})))
 
 ;;; groups should basically just call existing funcs with a group-by
 ;;; tacked on ignoring precedence and the group names in the select -
 ;;; I think
-
 ;;; TODO: allow creating cols to group on?
 (defmacro group [ds groups & forms]
   `(-> ~ds
-       ~@forms
+       ~@(map (partial rewrite-for-group groups) forms)
        (update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
-       (merge {:group-by ~(mapv keywordize groups)})))
+       ~(if (contains-summarize forms)
+          `(merge {:group-by ~(mapv keywordize groups)})
+          `(identity))))
 
 (defmacro count-by [ds & groups]
-  `(-> ~ds
-       (group [~@groups]
-              (summarize ~'n (~'count)))
-       (order-by (~'desc ~'n))))
+`(-> ~ds
+     (group [~@groups]
+            (summarize ~'n (~'count)))
+     (order-by (~'desc ~'n))))
 
 (defn join [join-type-kw query1 query2 join-cols suffix]
-  (let [q1-cols (get-selection-cols query1)
-        q2-cols (get-selection-cols query2)
-        scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
-        rename-col (fn [potential-clashes table col]
-                     [(scope-col table col)
-                      (if ((set potential-clashes) col)
-                        (keyword (format "%s%s" (name col) suffix))
-                        col)])]
-    {:select (concat
-              (mapv (partial rename-col [] :q1) q1-cols)
-              (->> q2-cols
-                   (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
-                   (mapv (partial rename-col q1-cols :q2))))
-     :from [[query1 :q1]]
-     join-type-kw [[query2 :q2]
-                   (->> (if-not (empty? join-cols)
-                          join-cols
-                          (sets/intersection (set q1-cols) (set q2-cols)))
-                        (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
-                        (into [:and]))]}))
+(let [q1-cols (get-selection-cols query1)
+      q2-cols (get-selection-cols query2)
+      scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
+      rename-col (fn [potential-clashes table col]
+                   [(scope-col table col)
+                    (if ((set potential-clashes) col)
+                      (keyword (format "%s%s" (name col) suffix))
+                      col)])]
+  {:select (concat
+            (mapv (partial rename-col [] :q1) q1-cols)
+            (->> q2-cols
+                 (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
+                 (mapv (partial rename-col q1-cols :q2))))
+   :from [[query1 :q1]]
+   join-type-kw [[query2 :q2]
+                 (->> (if-not (empty? join-cols)
+                        join-cols
+                        (sets/intersection (set q1-cols) (set q2-cols)))
+                      (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
+                      (into [:and]))]}))
 
 ;;; TODO: extract common macro
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
-  (let [q1 (m/mexpand-all query1)
-        q2 (m/mexpand-all query2)]
-    `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+(let [q1 (m/mexpand-all query1)
+      q2 (m/mexpand-all query2)]
+  `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
 
 (defmacro left-join [query1 query2 & {:keys [using suffix]}]
-  (let [q1 (m/mexpand-all query1)
-        q2 (m/mexpand-all query2)]
-    `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
-
-;;; TODO: aim for this: does R have sql formatting? that would be cool.
-;;; sql_gen("clojure code") %>% presto('whatsapp') -> 
-
+(let [q1 (m/mexpand-all query1)
+      q2 (m/mexpand-all query2)]
+  `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
 
 (defn -main [& args]
-  (binding [*ns* (find-ns 'sqlgen.core)]
-    (-> (read)
-        eval
-        (sql/format :inline true)
-        (get 0)
-        println)))
+(binding [*ns* (find-ns 'sqlgen.core)]
+  (-> (read)
+      eval
+      (sql/format :inline true)
+      (get 0)
+      println)))

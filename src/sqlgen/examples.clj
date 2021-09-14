@@ -35,9 +35,7 @@
     (group [topic status]
            (summarize n (count)
                       n_closed (count-if is-closed)))
-    (sql/format :inline true :pretty true)
-    (get 0)
-    println)
+    (sql/format :inline true))
 
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID-2>"))
@@ -169,5 +167,11 @@
 (-> (table foo)
     (select a b)
     (inner-join (-> (table bar)
-                    (select a c)))
+                    (select a c)
+                    (mutate foo (coalesce e f g))))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (group [id]
+           (mutate n (count)))
     (sql/format :inline true))
