@@ -14,14 +14,13 @@
     (mutate topic (json-extract-scalar data "$.topic")
             status (json-extract-scalar data "$.status")
             is-closed (= status "closed")) ;note: referring to status
-    (mutate not-is-closed (not is-closed))  ;TODO: this does not work currently - refers to previous mutate
+    (mutate not-is-closed (not is-closed))
     (order-by is-closed
               (desc status)
               (rand)
               (desc (json-extract-scalar data "$.topic")))
     (limit 100)
-    (sql/format :inline true :pretty true)
-    println)
+    (sql/format :inline true))
 
 (-> (table src_wa_fastdesk_tickets)
     (where (= ds "<DATEID>")
@@ -177,7 +176,7 @@
     (sql/format :inline true))
 
 (-> (table foo)
-    (group [] (mutate n (count)))
+    (group [] (mutate n (count)))       ;TODO: broken
     (sql/format :inline true))
 
 (-> (table foo)
@@ -206,4 +205,9 @@
 
 (-> (table foo)
     (where (in col 1 2 3))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (group [a b] (summarize n (count)))
+    (mutate x (= n 3))
     (sql/format :inline true))

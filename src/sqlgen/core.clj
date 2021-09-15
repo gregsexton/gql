@@ -44,7 +44,7 @@
          expr (second pair)]
      [expr over-params (keyword col)])))
 
-;;;TODO: case, cast
+;;;TODO: cast, case
 (defmacro expand-expr [expr]
   `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
                 (~'or [& args#] `[:or ~@(map keywordize args#)])
@@ -73,7 +73,6 @@
                 (~'/ [a# b#] `[:/ ~(keywordize a#) ~(keywordize b#)])]
                ~expr))
 
-;;; TODO: should always have a select and should lookup all the cols
 ;;; TODO: allow specifying partitions? so we get the base with a where ds straight away?
 (defmacro table [tbl]
   `{:from [~(keyword tbl)]
@@ -89,29 +88,24 @@
   `(m/macrolet [(~'desc [arg#] `[~(keywordize arg#) :desc])]
                (precedence-merge ~ds {:order-by (expand-expr [~@(map keywordize exprs)])})))
 
-;;; allowing referencing just declared vars by substituting. what's
-;;; the tradeoff compared to nesting? is an engine smart enough not to
-;;; duplicate effort?
-;;; nesting might prevent effort dup and it also takes care of using
-;;; multipe mutates and referring to vars, there might be a _lot_ of
-;;; nesting though.
-
-;;;TODO: should be using precedence-merge along with the substitution. e.g. this doesn't work after a group by
+;;; allowing referencing just declared vars by substituting. if we
+;;; don't want duplication, can use multiple mutates but that will
+;;; cause nesting
 (defmacro mutate [ds & forms]
   (let [pairs (partition 2 forms)
-        update-form `(update-in ~ds [:select] concat
-                                (m/symbol-macrolet [~@forms]
-                                                   ~(mapv named-expr pairs)))]
-    `(expand-expr ~(m/mexpand-all update-form))))
+        new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
+                                                    ~(mapv named-expr pairs)))]
+    `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
+                                            (expand-expr ~new-cols))})))
 
 (defmacro mutate-grouped [ds groups & forms]
   (let [pairs (partition 2 forms)
-        update-form `(update-in ~ds [:select] concat
-                                (m/symbol-macrolet [~@forms]
-                                                   [[[:over ~@(mapv (partial named-expr
-                                                                             {:partition-by (mapv keywordize groups)})
-                                                                    pairs)]]]))]
-    `(expand-expr ~(m/mexpand-all update-form))))
+        new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
+                                                    [[[:over ~@(mapv (partial named-expr
+                                                                              {:partition-by (mapv keywordize groups)})
+                                                                     pairs)]]]))]
+    `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
+                                            (expand-expr ~new-cols))})))
 
 (defn limit [ds limit]
   (precedence-merge ds {:limit limit}))
@@ -127,12 +121,16 @@
     `(precedence-merge ~ds (expand-expr ~(m/mexpand-all replace-form)))))
 
 ;;; diff between summarise and select and mutate: select is about
-;;; preds to match existing stuff. summarise is a different form to
-;;; name a column with an agg function. could possibly use mutate but
-;;; this will not work well under groups. mutate adds to the existing
-;;; but summarize replaces
+;;; preds to match existing stuff. it replaces cols, allows renaming
+;;; with :as, but does not allow creating cols from new expressions.
+;;; summarise replaces all cols, it has a different form to make it
+;;; convenient to create a new set of columns from expressions. most
+;;; useful for summarising. mutate adds to the existing selection with
+;;; a similar form to summarize. summarize and mutate allow referring
+;;; to just created columns. they will resubstitute expressions to
+;;; make this possible. using another summarize or mutate avoids this
+;;; at the cost of nesting.
 
-;;; TODO: look for opportunities to make things consistent and cleaner - easier to remember
 ;;; TODO: am I happy with the groups api? it doesn't quite have the same semantic as tidyverse?
 
 ;;; TODO: slice sample and other slices
@@ -146,8 +144,6 @@
 ;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
 ;;; TODO: grouping -- order by - probably should influence the order by on the window function?
 ;;; TODO: grouping -- slice functions
-
-;;; TODO: allow using variables - probably need to use binding? just don't? consider out of scope
 
 (defn rewrite-for-group [groups form]
   (if (list? form)
@@ -168,7 +164,9 @@
 (defmacro group [ds groups & forms]
   `(-> ~ds
        ~@(map (partial rewrite-for-group groups) forms)
-       (update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
+       ~(if (contains-summarize forms)
+          `(update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
+          `(identity))
        ~(if (contains-summarize forms)
           `(merge {:group-by ~(mapv keywordize groups)})
           `(identity))))
