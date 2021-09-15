@@ -125,6 +125,9 @@
 ;;; this will not work well under groups. mutate adds to the existing
 ;;; but summarize replaces
 
+;;; TODO: look for opportunities to make things consistent and cleaner - easier to remember
+;;; TODO: am I happy with the groups api? it doesn't quite have the same semantic as tidyverse?
+
 ;;; TODO: slice sample and other slices
 ;;; TODO: select preds e.g. not this, starts-with etc
 ;;; TODO: major clean up
@@ -133,7 +136,7 @@
 ;;; TODO: joins: would be great to allow more than just =
 
 ;;; TODO: grouping -- filter/where - having?
-;;; TODO: grouping -- mutate - window funcs
+;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
 ;;; TODO: grouping -- order by - probably should influence the order by on the window function?
 ;;; TODO: grouping -- slice functions
 
@@ -164,10 +167,10 @@
           `(identity))))
 
 (defmacro count-by [ds & groups]
-`(-> ~ds
-     (group [~@groups]
-            (summarize ~'n (~'count)))
-     (order-by (~'desc ~'n))))
+  `(-> ~ds
+       (group [~@groups]
+              (~'summarize ~'n (~'count)))
+       (order-by (~'desc ~'n))))
 
 (defn join [join-type-kw query1 query2 join-cols suffix]
 (let [q1-cols (get-selection-cols query1)

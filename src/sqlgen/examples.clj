@@ -175,3 +175,15 @@
     (group [id]
            (mutate n (count)))
     (sql/format :inline true))
+
+(-> (table foo)
+    (group [] (mutate n (count)))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (group [foo] (summarize n (count)))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (count-by foo)
+    (sql/format :inline true))
