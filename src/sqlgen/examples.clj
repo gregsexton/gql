@@ -187,3 +187,23 @@
 (-> (table foo)
     (count-by foo)
     (sql/format :inline true))
+
+(-> (table foo)
+    (mutate n (if-else flag 1 0))
+    (sql/format :inline true))
+
+(let [tickets (-> (table src_wa_fastdesk_tickets)
+                  (where (= ds "<DATEID>"))
+                  (mutate topic (json-extract-scalar data "$.topic"))
+                  (select (id :as ticket-id) topic))]
+  (-> (table wa_support_funnel)
+      (where (= ds "<DATEID-1>")
+             (= event_type "ticket_creation"))
+      (select event_type ticket-id)
+      (left-join tickets)
+      (count-by topic)
+      (sql/format :inline true)))
+
+(-> (table foo)
+    (where (in col 1 2 3))
+    (sql/format :inline true))

@@ -18,10 +18,12 @@
                 0
                 (->> (keys a)
                      (map precedence)
+                     (remove nil?) ;necessary for e.g. inner-join
                      (apply max))))
             (higher-precedence [a b]
               (<= (prec a) (prec b)))]
       (if (higher-precedence fragment query)
+        ;; TODO: honeysql does support with, could flatten the nesting using this
         (merge {:select (get-selection-cols query) :from query} fragment)
         (merge query fragment)))))
 
@@ -42,6 +44,7 @@
          expr (second pair)]
      [expr over-params (keyword col)])))
 
+;;;TODO: case, cast
 (defmacro expand-expr [expr]
   `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
                 (~'or [& args#] `[:or ~@(map keywordize args#)])
@@ -51,11 +54,13 @@
                 (~'>= [a# b#] `[:>= ~(keywordize a#) ~(keywordize b#)])
                 (~'< [a# b#] `[:< ~(keywordize a#) ~(keywordize b#)])
                 (~'<= [a# b#] `[:<= ~(keywordize a#) ~(keywordize b#)])
+                (~'like [a# b#] `[:like ~(keywordize a#) ~(keywordize b#)])
                 (~'not [a#] `[:not ~(keywordize a#)])
-                (~'json-extract-scalar [from# path#]
-                 `[[:json_extract_scalar ~(keywordize from#) ~path#]])
-                (~'approx-distinct [a#]
-                 `[[:approx_distinct ~(keywordize a#)]])
+                (~'if-else [cond# b1# b2#] `[:if ~(keywordize cond#) ~(keywordize b1#) ~(keywordize b2#)])
+                (~'in [expr# & vals#] `[:in ~(keywordize expr#) [:composite ~@(map keywordize vals#)]])
+                ;; TODO: this in only supports literal lists. for testing against sub queries could introduce semi-join
+                (~'json-extract-scalar [from# path#] `[[:json_extract_scalar ~(keywordize from#) ~path#]])
+                (~'approx-distinct [a#] `[[:approx_distinct ~(keywordize a#)]])
                 (~'rand [] [[:rand]])
                 (~'count [] [[:count :*]])
                 (~'count-if [a#] `[[:count_if ~(keywordize a#)]])
@@ -90,6 +95,8 @@
 ;;; nesting might prevent effort dup and it also takes care of using
 ;;; multipe mutates and referring to vars, there might be a _lot_ of
 ;;; nesting though.
+
+;;;TODO: should be using precedence-merge along with the substitution. e.g. this doesn't work after a group by
 (defmacro mutate [ds & forms]
   (let [pairs (partition 2 forms)
         update-form `(update-in ~ds [:select] concat
@@ -173,26 +180,26 @@
        (order-by (~'desc ~'n))))
 
 (defn join [join-type-kw query1 query2 join-cols suffix]
-(let [q1-cols (get-selection-cols query1)
-      q2-cols (get-selection-cols query2)
-      scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
-      rename-col (fn [potential-clashes table col]
-                   [(scope-col table col)
-                    (if ((set potential-clashes) col)
-                      (keyword (format "%s%s" (name col) suffix))
-                      col)])]
-  {:select (concat
-            (mapv (partial rename-col [] :q1) q1-cols)
-            (->> q2-cols
-                 (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
-                 (mapv (partial rename-col q1-cols :q2))))
-   :from [[query1 :q1]]
-   join-type-kw [[query2 :q2]
-                 (->> (if-not (empty? join-cols)
-                        join-cols
-                        (sets/intersection (set q1-cols) (set q2-cols)))
-                      (map (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
-                      (into [:and]))]}))
+  (let [q1-cols (get-selection-cols query1)
+        q2-cols (get-selection-cols query2)
+        scope-col (fn [table col] (keyword (format "%s.%s" (name table) (name col))))
+        rename-col (fn [potential-clashes table col]
+                     [(scope-col table col)
+                      (if ((set potential-clashes) col)
+                        (keyword (format "%s%s" (name col) suffix))
+                        col)])]
+    {:select (vec (concat
+                   (mapv (partial rename-col [] :q1) q1-cols)
+                   (->> q2-cols
+                        (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
+                        (mapv (partial rename-col q1-cols :q2)))))
+     :from [[query1 :q1]]
+     join-type-kw [[query2 :q2]
+                   (->> (if-not (empty? join-cols)
+                          join-cols
+                          (sets/intersection (set q1-cols) (set q2-cols)))
+                        (mapv (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
+                        (into [:and]))]}))
 
 ;;; TODO: extract common macro
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
