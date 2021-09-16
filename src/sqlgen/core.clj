@@ -5,6 +5,18 @@
             [clojure.set :as sets])
   (:gen-class))
 
+
+;;; TODO: slice sample and other slices
+;;; TODO: select preds e.g. not this, starts-with etc
+
+;;; TODO: joins: would be great to allow more than just =
+
+;;; TODO: grouping -- filter/where - having?
+;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
+;;; TODO: grouping -- order by - probably should influence the order by on the window function?
+;;; TODO: grouping -- slice functions
+
+
 (defn get-selection-cols [query]
   (->> (query :select)
        (map (fn [col] (if (vector? col)
@@ -120,31 +132,6 @@
     ;; select may have been mutated
     `(precedence-merge ~ds (expand-expr ~(m/mexpand-all replace-form)))))
 
-;;; diff between summarise and select and mutate: select is about
-;;; preds to match existing stuff. it replaces cols, allows renaming
-;;; with :as, but does not allow creating cols from new expressions.
-;;; summarise replaces all cols, it has a different form to make it
-;;; convenient to create a new set of columns from expressions. most
-;;; useful for summarising. mutate adds to the existing selection with
-;;; a similar form to summarize. summarize and mutate allow referring
-;;; to just created columns. they will resubstitute expressions to
-;;; make this possible. using another summarize or mutate avoids this
-;;; at the cost of nesting.
-
-;;; TODO: am I happy with the groups api? it doesn't quite have the same semantic as tidyverse?
-
-;;; TODO: slice sample and other slices
-;;; TODO: select preds e.g. not this, starts-with etc
-;;; TODO: major clean up
-;;; TODO: with
-
-;;; TODO: joins: would be great to allow more than just =
-
-;;; TODO: grouping -- filter/where - having?
-;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
-;;; TODO: grouping -- order by - probably should influence the order by on the window function?
-;;; TODO: grouping -- slice functions
-
 (defn rewrite-for-group [groups form]
   (if (list? form)
     (let [[f & args :as whole] form]
@@ -157,9 +144,6 @@
        (map first)
        (some #{'summarize})))
 
-;;; groups should basically just call existing funcs with a group-by
-;;; tacked on ignoring precedence and the group names in the select -
-;;; I think
 ;;; TODO: allow creating cols to group on?
 (defmacro group [ds groups & forms]
   `(-> ~ds
@@ -201,19 +185,38 @@
 
 ;;; TODO: extract common macro
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
-(let [q1 (m/mexpand-all query1)
-      q2 (m/mexpand-all query2)]
-  `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+  (let [q1 (m/mexpand-all query1)
+        q2 (m/mexpand-all query2)]
+    `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
 
 (defmacro left-join [query1 query2 & {:keys [using suffix]}]
-(let [q1 (m/mexpand-all query1)
-      q2 (m/mexpand-all query2)]
-  `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+  (let [q1 (m/mexpand-all query1)
+        q2 (m/mexpand-all query2)]
+    `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+
 
 (defn -main [& args]
-(binding [*ns* (find-ns 'sqlgen.core)]
-  (-> (read)
-      eval
-      (sql/format :inline true)
-      (get 0)
-      println)))
+  (binding [*ns* (find-ns 'sqlgen.core)]
+    (-> (read)
+        eval
+        (sql/format :inline true)
+        (get 0)
+        println)))
+
+
+;;; diff between summarise and select and mutate: select is about
+;;; preds to match existing stuff. it replaces cols, allows renaming
+;;; with :as, but does not allow creating cols from new expressions.
+;;; summarise replaces all cols, it has a different form to make it
+;;; convenient to create a new set of columns from expressions. most
+;;; useful for summarising. mutate adds to the existing selection with
+;;; a similar form to summarize. summarize and mutate allow referring
+;;; to just created columns. they will resubstitute expressions to
+;;; make this possible. using another summarize or mutate avoids this
+;;; at the cost of nesting.
+
+
+;;; how is this different from dbplyr? don't need a dbi connection.
+;;; but mostly it breaks with trying to have exactly the same
+;;; semantics as dplyr. it is just a bit closer to sql which makes the
+;;; generated output more predictable and understandable.
