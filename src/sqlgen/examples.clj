@@ -211,3 +211,8 @@
     (group [a b] (summarize n (count)))
     (mutate x (= n 3))
     (sql/format :inline true))
+
+(-> (table foo)
+    (mutate x (date updated))
+    (sql/format :inline true)
+    )
