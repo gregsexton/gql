@@ -213,6 +213,7 @@
     (sql/format :inline true))
 
 (-> (table foo)
-    (mutate x (date updated))
-    (sql/format :inline true)
-    )
+    (mutate x (case-when (= f 3) "foo"
+                         (> f 2) "bar"
+                         else "medium"))
+    (sql/format :inline true))

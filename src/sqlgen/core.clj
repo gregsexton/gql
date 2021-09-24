@@ -56,7 +56,6 @@
          expr (second pair)]
      [expr over-params (keyword col)])))
 
-;;;TODO: cast, case
 (defmacro expand-expr [expr]
   `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
                 (~'or [& args#] `[:or ~@(map keywordize args#)])
@@ -69,17 +68,20 @@
                 (~'like [a# b#] `[:like ~(keywordize a#) ~(keywordize b#)])
                 (~'not [a#] `[:not ~(keywordize a#)])
                 (~'if-else [cond# b1# b2#] `[:if ~(keywordize cond#) ~(keywordize b1#) ~(keywordize b2#)])
+                ;; TODO: this in only supports literal lists.
                 (~'in [expr# & vals#] `[:in ~(keywordize expr#) [:composite ~@(map keywordize vals#)]])
-                ;; TODO: this in only supports literal lists. for testing against sub queries could introduce semi-join
                 (~'json-extract-scalar [from# path#] `[:json_extract_scalar ~(keywordize from#) ~path#])
                 (~'approx-distinct [a#] `[:approx_distinct ~(keywordize a#)])
                 (~'rand [] [:rand])
                 (~'count [] [:count :*])
                 (~'count-if [a#] `[:count_if ~(keywordize a#)])
+                (~'count-distinct [arg#] `[:count [:distinct ~(keywordize arg#)]])
                 (~'sum [a#] `[:sum ~(keywordize a#)])
                 (~'avg [a#] `[:avg ~(keywordize a#)])
                 (~'coalesce [& args#] `[:coalesce ~@(map keywordize args#)])
                 (~'date [arg#] `[:date ~(keywordize arg#)])
+                (~'cast [arg# type#] `[:cast ~(keywordize arg#) ~(keywordize type#)])
+                (~'case-when [& args#] `[:case ~@(map keywordize args#)])
                 (~'+ [a# b#] `[:+ ~(keywordize a#) ~(keywordize b#)])
                 (~'- [a# b#] `[:- ~(keywordize a#) ~(keywordize b#)])
                 (~'* [a# b#] `[:* ~(keywordize a#) ~(keywordize b#)])
