@@ -217,3 +217,8 @@
                          (> f 2) "bar"
                          else "medium"))
     (sql/format :inline true))
+
+(-> (table foo)
+    (order-by x (rand) (desc y) (desc (rand)))
+    (mutate x (rand))
+    (sql/format :inline true))

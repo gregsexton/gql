@@ -56,6 +56,14 @@
          expr (second pair)]
      [expr over-params (keyword col)])))
 
+;;; needed as order-by has the :asc :desc syntax that is inconsistent
+(defn order-by-wrap-if-needed [expr]
+  (if (and (vector? expr)
+           (not= (last expr) :desc))
+    [expr]
+    expr))
+
+
 (defmacro expand-expr [expr]
   `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
                 (~'or [& args#] `[:or ~@(map keywordize args#)])
@@ -101,7 +109,8 @@
 
 (defmacro order-by [ds & exprs]
   `(m/macrolet [(~'desc [arg#] `[~(keywordize arg#) :desc])]
-               (precedence-merge ~ds {:order-by (expand-expr [~@(map keywordize exprs)])})))
+               (precedence-merge ~ds {:order-by (mapv order-by-wrap-if-needed
+                                                      (expand-expr [~@(mapv keywordize exprs)]))})))
 
 ;;; allowing referencing just declared vars by substituting. if we
 ;;; don't want duplication, can use multiple mutates but that will
