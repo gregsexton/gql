@@ -5,17 +5,6 @@
             [clojure.set :as sets])
   (:gen-class))
 
-
-;;; TODO: slice sample and other slices
-;;; TODO: select preds e.g. not this, starts-with etc
-
-;;; TODO: joins: would be great to allow more than just =
-
-;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
-;;; TODO: grouping -- order by - probably should influence the order by on the window function?
-;;; TODO: grouping -- slice functions
-
-
 (defn get-selection-cols [query]
   (->> (query :select)
        (map (fn [col] (if (vector? col)
@@ -151,6 +140,13 @@
 (defn limit [ds limit]
   (precedence-merge ds {:limit limit}))
 
+(def slice-head limit)
+
+(defn slice-sample [ds n]
+  (-> ds
+      (order-by (rand))
+      (slice-head n)))
+
 ;;; TODO: naming columns the same as functions causes an infinite loop e.g. sum (sum foo)
 (defmacro summarize [ds & forms]
   (let [pairs (partition 2 forms)
@@ -172,7 +168,10 @@
        (map first)
        (some #{'summarize})))
 
-;;; TODO: allow creating cols to group on?
+;;; TODO: should allow over() with no partition by
+;;; TODO: order by - should influence the order by on the window function
+;;; TODO: support slice functions for groups
+;;; TODO: allow creating cols to group on
 (defmacro group [ds groups & forms]
   `(-> ~ds
        ~@(map (partial rewrite-for-group groups) forms)
@@ -189,6 +188,7 @@
               (~'summarize ~'n (~'count)))
        (order-by (~'desc ~'n))))
 
+;;; TODO: would be great to allow more than just =
 (defn join [join-type-kw query1 query2 join-cols suffix]
   (let [q1-cols (get-selection-cols query1)
         q2-cols (get-selection-cols query2)

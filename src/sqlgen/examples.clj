@@ -229,4 +229,9 @@
                      (json-extract "$.body")
                      (cast "MAP<VARCHAR, JSON>")
                      (map-keys)))
+    (slice-head 5)
+    (sql/format :inline true))
+
+(-> (table foo)
+    (slice-sample 5)
     (sql/format :inline true))
