@@ -222,3 +222,11 @@
     (order-by x (rand) (desc y) (desc (rand)))
     (mutate x (rand))
     (sql/format :inline true))
+
+(-> (table foo)
+    (mutate x (cast y VARCHAR))
+    (mutate keys (-> json-payload
+                     (json-extract "$.body")
+                     (cast "MAP<VARCHAR, JSON>")
+                     (map-keys)))
+    (sql/format :inline true))

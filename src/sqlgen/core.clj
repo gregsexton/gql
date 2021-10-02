@@ -11,7 +11,6 @@
 
 ;;; TODO: joins: would be great to allow more than just =
 
-;;; TODO: grouping -- filter/where - having?
 ;;; TODO: grouping -- mutate - window funcs - should allow over() with no partition by
 ;;; TODO: grouping -- order by - probably should influence the order by on the window function?
 ;;; TODO: grouping -- slice functions
@@ -78,7 +77,18 @@
                 (~'if-else [cond# b1# b2#] `[:if ~(keywordize cond#) ~(keywordize b1#) ~(keywordize b2#)])
                 ;; TODO: this in only supports literal lists.
                 (~'in [expr# & vals#] `[:in ~(keywordize expr#) [:composite ~@(map keywordize vals#)]])
+                ;; json
+                (~'json-extract [from# path#] `[:json_extract ~(keywordize from#) ~path#])
                 (~'json-extract-scalar [from# path#] `[:json_extract_scalar ~(keywordize from#) ~path#])
+                (~'json-size [from# path#] `[:json_size ~(keywordize from#) ~path#])
+                (~'json-parse [a#] `[:json_parse ~(keywordize a#)])
+                (~'json-format [a#] `[:json_format ~(keywordize a#)])
+                (~'is-json-scalar [a#] `[:is_json_scalar ~(keywordize a#)])
+                ;; arrays
+                ;; maps
+                (~'map-keys [a#] `[:map_keys ~(keywordize a#)])
+                (~'map-values [a#] `[:map_values ~(keywordize a#)])
+                ;; misc
                 (~'approx-distinct [a#] `[:approx_distinct ~(keywordize a#)])
                 (~'rand [] [:rand])
                 (~'count [] [:count :*])
@@ -88,7 +98,7 @@
                 (~'avg [a#] `[:avg ~(keywordize a#)])
                 (~'coalesce [& args#] `[:coalesce ~@(map keywordize args#)])
                 (~'date [arg#] `[:date ~(keywordize arg#)])
-                (~'cast [arg# type#] `[:cast ~(keywordize arg#) ~(keywordize type#)])
+                (~'cast [arg# type#] `[:cast ~(keywordize arg#) ~(keyword type#)])
                 (~'case-when [& args#] `[:case ~@(map keywordize args#)])
                 (~'+ [a# b#] `[:+ ~(keywordize a#) ~(keywordize b#)])
                 (~'- [a# b#] `[:- ~(keywordize a#) ~(keywordize b#)])
@@ -96,7 +106,6 @@
                 (~'/ [a# b#] `[:/ ~(keywordize a#) ~(keywordize b#)])]
                ~expr))
 
-;;; TODO: allow specifying partitions? so we get the base with a where ds straight away?
 (defmacro table [tbl]
   `{:from [~(keyword tbl)]
     :select [:*]})
@@ -135,7 +144,6 @@
   (precedence-merge ds {:limit limit}))
 
 ;;; TODO: naming columns the same as functions causes an infinite loop e.g. sum (sum foo)
-;;; TODO: would be cool to auto-name, probably need to change the form for this
 (defmacro summarize [ds & forms]
   (let [pairs (partition 2 forms)
         replace-form `{:select (m/symbol-macrolet [~@forms]
@@ -195,7 +203,6 @@
                         (mapv (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
                         (into [:and]))]}))
 
-;;; TODO: extract common macro
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
   (let [q1 (m/mexpand-all query1)
         q2 (m/mexpand-all query2)]
