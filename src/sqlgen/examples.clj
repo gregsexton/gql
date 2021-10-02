@@ -235,3 +235,9 @@
 (-> (table foo)
     (slice-sample 5)
     (sql/format :inline true))
+
+;;; this was added to check propagating * in selects and not ending up with x twice
+(-> (table foo)
+    (mutate x 5)
+    (mutate y 7)
+    (sql/format :inline true))

@@ -6,10 +6,10 @@
   (:gen-class))
 
 (defn get-selection-cols [query]
-  (->> (query :select)
-       (map (fn [col] (if (vector? col)
-                        (second col)
-                        col)))))
+  (let [cols (->> (query :select)
+                  (map (fn [col] (if (vector? col) (second col) col))))]
+    ;; if the selection contains * then we don't need to also specify any other cols
+    (if (some #{:*} cols) [:*] cols)))
 
 (defn merge-with [query fragment]
   (let [find-and-bump (fn [with] (-> with last first name (subs 1) Integer/parseInt inc (->> (str "q")) keyword))
@@ -148,6 +148,7 @@
       (slice-head n)))
 
 ;;; TODO: naming columns the same as functions causes an infinite loop e.g. sum (sum foo)
+;;; TODO: I should probably rename this - something that captures replace columns
 (defmacro summarize [ds & forms]
   (let [pairs (partition 2 forms)
         replace-form `{:select (m/symbol-macrolet [~@forms]
@@ -174,10 +175,13 @@
 ;;; TODO: allow creating cols to group on
 (defmacro group [ds groups & forms]
   `(-> ~ds
+       ;; operation
        ~@(map (partial rewrite-for-group groups) forms)
+       ;; update the select
        ~(if (contains-summarize forms)
           `(update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
           `(identity))
+       ;; add the group by
        ~(if (contains-summarize forms)
           `(merge {:group-by ~(mapv keywordize groups)})
           `(identity))))
