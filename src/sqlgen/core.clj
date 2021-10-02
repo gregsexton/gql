@@ -22,6 +22,17 @@
                         (second col)
                         col)))))
 
+(defn merge-with [query fragment]
+  (let [find-and-bump (fn [with] (-> with last first name (subs 1) Integer/parseInt inc (->> (str "q")) keyword))
+        base (if (not (contains? query :with))
+               {:with [[:q1 query]] :select (get-selection-cols query) :from :q1}
+               (let [with (:with query)
+                     name (find-and-bump with)
+                     remain (dissoc query :with)]
+                 {:with (conj with [name remain])
+                  :select (get-selection-cols query) :from name}))]
+    (merge base fragment)))
+
 (defn precedence-merge [query fragment]
   (let [precedence (zipmap [:from :where :group-by :having :select :order-by :limit] (range))]
     (letfn [(prec [a]
@@ -33,10 +44,7 @@
                      (apply max))))
             (higher-precedence [a b]
               (<= (prec a) (prec b)))]
-      (if (higher-precedence fragment query)
-        ;; TODO: honeysql does support with, could flatten the nesting using this
-        (merge {:select (get-selection-cols query) :from query} fragment)
-        (merge query fragment)))))
+      ((if (higher-precedence fragment query) merge-with merge) query fragment))))
 
 (defn keywordize [form] (if (symbol? form) (keyword form) form))
 
@@ -191,16 +199,16 @@
                         (keyword (format "%s%s" (name col) suffix))
                         col)])]
     {:select (vec (concat
-                   (mapv (partial rename-col [] :q1) q1-cols)
+                   (mapv (partial rename-col [] :jq1) q1-cols)
                    (->> q2-cols
                         (remove (set (if (empty? join-cols) q1-cols join-cols))) ; used to maintain order
-                        (mapv (partial rename-col q1-cols :q2)))))
-     :from [[query1 :q1]]
-     join-type-kw [[query2 :q2]
+                        (mapv (partial rename-col q1-cols :jq2)))))
+     :from [[query1 :jq1]]
+     join-type-kw [[query2 :jq2]
                    (->> (if-not (empty? join-cols)
                           join-cols
                           (sets/intersection (set q1-cols) (set q2-cols)))
-                        (mapv (fn [col] [:= (scope-col :q1 col) (scope-col :q2 col)]))
+                        (mapv (fn [col] [:= (scope-col :jq1 col) (scope-col :jq2 col)]))
                         (into [:and]))]}))
 
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
