@@ -8,10 +8,10 @@
 (defn get-selection-cols [query]
   (let [cols (->> (query :select)
                   (map (fn [col] (if (vector? col) (second col) col))))]
-    ;; if the selection contains * then we don't need to also specify any other cols
+    ;; if the selection contains *, then we don't need to also specify any other cols
     (if (some #{:*} cols) [:*] cols)))
 
-(defn merge-with [query fragment]
+(defn merge-using-with [query fragment]
   (let [find-and-bump (fn [with] (-> with last first name (subs 1) Integer/parseInt inc (->> (str "q")) keyword))
         base (if (not (contains? query :with))
                {:with [[:q1 query]] :select (get-selection-cols query) :from :q1}
@@ -33,9 +33,9 @@
                      (apply max))))
             (higher-precedence [a b]
               (<= (prec a) (prec b)))]
-      ((if (higher-precedence fragment query) merge-with merge) query fragment))))
+      ((if (higher-precedence fragment query) merge-using-with merge) query fragment))))
 
-(defn keywordize [form] (if (symbol? form) (keyword form) form))
+(defn symbol->keyword [form] (if (symbol? form) (keyword form) form))
 
 (defn keyword-or-alias [form]
   (cond (symbol? form) (keyword form)
@@ -61,46 +61,46 @@
 
 
 (defmacro expand-expr [expr]
-  `(m/macrolet [(~'and [& args#] `[:and ~@(map keywordize args#)])
-                (~'or [& args#] `[:or ~@(map keywordize args#)])
-                (~'= [a# b#] `[:= ~(keywordize a#) ~(keywordize b#)])
-                (~'not= [a# b#] `[:<> ~(keywordize a#) ~(keywordize b#)])
-                (~'> [a# b#] `[:> ~(keywordize a#) ~(keywordize b#)])
-                (~'>= [a# b#] `[:>= ~(keywordize a#) ~(keywordize b#)])
-                (~'< [a# b#] `[:< ~(keywordize a#) ~(keywordize b#)])
-                (~'<= [a# b#] `[:<= ~(keywordize a#) ~(keywordize b#)])
-                (~'like [a# b#] `[:like ~(keywordize a#) ~(keywordize b#)])
-                (~'not [a#] `[:not ~(keywordize a#)])
-                (~'if-else [cond# b1# b2#] `[:if ~(keywordize cond#) ~(keywordize b1#) ~(keywordize b2#)])
+  `(m/macrolet [(~'and [& args#] `[:and ~@(map symbol->keyword args#)])
+                (~'or [& args#] `[:or ~@(map symbol->keyword args#)])
+                (~'= [a# b#] `[:= ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'not= [a# b#] `[:<> ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'> [a# b#] `[:> ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'>= [a# b#] `[:>= ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'< [a# b#] `[:< ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'<= [a# b#] `[:<= ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'like [a# b#] `[:like ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'not [a#] `[:not ~(symbol->keyword a#)])
+                (~'if-else [cond# b1# b2#] `[:if ~(symbol->keyword cond#) ~(symbol->keyword b1#) ~(symbol->keyword b2#)])
                 ;; TODO: this in only supports literal lists.
-                (~'in [expr# & vals#] `[:in ~(keywordize expr#) [:composite ~@(map keywordize vals#)]])
+                (~'in [expr# & vals#] `[:in ~(symbol->keyword expr#) [:composite ~@(map symbol->keyword vals#)]])
                 ;; json
-                (~'json-extract [from# path#] `[:json_extract ~(keywordize from#) ~path#])
-                (~'json-extract-scalar [from# path#] `[:json_extract_scalar ~(keywordize from#) ~path#])
-                (~'json-size [from# path#] `[:json_size ~(keywordize from#) ~path#])
-                (~'json-parse [a#] `[:json_parse ~(keywordize a#)])
-                (~'json-format [a#] `[:json_format ~(keywordize a#)])
-                (~'is-json-scalar [a#] `[:is_json_scalar ~(keywordize a#)])
+                (~'json-extract [from# path#] `[:json_extract ~(symbol->keyword from#) ~path#])
+                (~'json-extract-scalar [from# path#] `[:json_extract_scalar ~(symbol->keyword from#) ~path#])
+                (~'json-size [from# path#] `[:json_size ~(symbol->keyword from#) ~path#])
+                (~'json-parse [a#] `[:json_parse ~(symbol->keyword a#)])
+                (~'json-format [a#] `[:json_format ~(symbol->keyword a#)])
+                (~'is-json-scalar [a#] `[:is_json_scalar ~(symbol->keyword a#)])
                 ;; arrays
                 ;; maps
-                (~'map-keys [a#] `[:map_keys ~(keywordize a#)])
-                (~'map-values [a#] `[:map_values ~(keywordize a#)])
+                (~'map-keys [a#] `[:map_keys ~(symbol->keyword a#)])
+                (~'map-values [a#] `[:map_values ~(symbol->keyword a#)])
                 ;; misc
-                (~'approx-distinct [a#] `[:approx_distinct ~(keywordize a#)])
+                (~'approx-distinct [a#] `[:approx_distinct ~(symbol->keyword a#)])
                 (~'rand [] [:rand])
                 (~'count [] [:count :*])
-                (~'count-if [a#] `[:count_if ~(keywordize a#)])
-                (~'count-distinct [arg#] `[:count [:distinct ~(keywordize arg#)]])
-                (~'sum [a#] `[:sum ~(keywordize a#)])
-                (~'avg [a#] `[:avg ~(keywordize a#)])
-                (~'coalesce [& args#] `[:coalesce ~@(map keywordize args#)])
-                (~'date [arg#] `[:date ~(keywordize arg#)])
-                (~'cast [arg# type#] `[:cast ~(keywordize arg#) ~(keyword type#)])
-                (~'case-when [& args#] `[:case ~@(map keywordize args#)])
-                (~'+ [a# b#] `[:+ ~(keywordize a#) ~(keywordize b#)])
-                (~'- [a# b#] `[:- ~(keywordize a#) ~(keywordize b#)])
-                (~'* [a# b#] `[:* ~(keywordize a#) ~(keywordize b#)])
-                (~'/ [a# b#] `[:/ ~(keywordize a#) ~(keywordize b#)])]
+                (~'count-if [a#] `[:count_if ~(symbol->keyword a#)])
+                (~'count-distinct [arg#] `[:count [:distinct ~(symbol->keyword arg#)]])
+                (~'sum [a#] `[:sum ~(symbol->keyword a#)])
+                (~'avg [a#] `[:avg ~(symbol->keyword a#)])
+                (~'coalesce [& args#] `[:coalesce ~@(map symbol->keyword args#)])
+                (~'date [arg#] `[:date ~(symbol->keyword arg#)])
+                (~'cast [arg# type#] `[:cast ~(symbol->keyword arg#) ~(keyword type#)])
+                (~'case-when [& args#] `[:case ~@(map symbol->keyword args#)])
+                (~'+ [a# b#] `[:+ ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'- [a# b#] `[:- ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'* [a# b#] `[:* ~(symbol->keyword a#) ~(symbol->keyword b#)])
+                (~'/ [a# b#] `[:/ ~(symbol->keyword a#) ~(symbol->keyword b#)])]
                ~expr))
 
 (defmacro table [tbl]
@@ -114,9 +114,9 @@
   `(precedence-merge ~ds {:where (expand-expr (~'and ~@exprs))}))
 
 (defmacro order-by [ds & exprs]
-  `(m/macrolet [(~'desc [arg#] `[~(keywordize arg#) :desc])]
+  `(m/macrolet [(~'desc [arg#] `[~(symbol->keyword arg#) :desc])]
                (precedence-merge ~ds {:order-by (mapv order-by-wrap-if-needed
-                                                      (expand-expr [~@(mapv keywordize exprs)]))})))
+                                                      (expand-expr [~@(mapv symbol->keyword exprs)]))})))
 
 ;;; allowing referencing just declared vars by substituting. if we
 ;;; don't want duplication, can use multiple mutates but that will
@@ -132,7 +132,7 @@
   (let [pairs (partition 2 forms)
         new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
                                                     [[[:over ~@(mapv (partial named-expr
-                                                                              {:partition-by (mapv keywordize groups)})
+                                                                              {:partition-by (mapv symbol->keyword groups)})
                                                                      pairs)]]]))]
     `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
                                             (expand-expr ~new-cols))})))
@@ -179,11 +179,11 @@
        ~@(map (partial rewrite-for-group groups) forms)
        ;; update the select
        ~(if (contains-summarize forms)
-          `(update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv keywordize groups))
+          `(update-in [:select] (fn [a# b#] (concat b# a#)) ~(mapv symbol->keyword groups))
           `(identity))
        ;; add the group by
        ~(if (contains-summarize forms)
-          `(merge {:group-by ~(mapv keywordize groups)})
+          `(merge {:group-by ~(mapv symbol->keyword groups)})
           `(identity))))
 
 (defmacro count-by [ds & groups]
@@ -218,12 +218,12 @@
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
   (let [q1 (m/mexpand-all query1)
         q2 (m/mexpand-all query2)]
-    `(join :inner-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+    `(join :inner-join ~q1 ~q2 ~(mapv symbol->keyword using) ~(or suffix ""))))
 
 (defmacro left-join [query1 query2 & {:keys [using suffix]}]
   (let [q1 (m/mexpand-all query1)
         q2 (m/mexpand-all query2)]
-    `(join :left-join ~q1 ~q2 ~(mapv keywordize using) ~(or suffix ""))))
+    `(join :left-join ~q1 ~q2 ~(mapv symbol->keyword using) ~(or suffix ""))))
 
 
 (defn -main [& args]
