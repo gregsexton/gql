@@ -5,6 +5,11 @@
             [clojure.set :as sets])
   (:gen-class))
 
+(defn inform [prefix val]
+  (binding [*out* *err*]
+    (println (str prefix " " val)))
+  val)
+
 (defn get-selection-cols [query]
   (let [cols (->> (query :select)
                   (map (fn [col] (if (vector? col) (second col) col))))]
@@ -213,7 +218,8 @@
                           join-cols
                           (sets/intersection (set q1-cols) (set q2-cols)))
                         (mapv (fn [col] [:= (scope-col :jq1 col) (scope-col :jq2 col)]))
-                        (into [:and]))]}))
+                        (into [:and])
+                        (inform "join using"))]}))
 
 (defmacro inner-join [query1 query2 & {:keys [using suffix]}]
   (let [q1 (m/mexpand-all query1)
