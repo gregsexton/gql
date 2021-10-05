@@ -94,12 +94,16 @@
                 (~'approx-distinct [a#] `[:approx_distinct ~(symbol->keyword a#)])
                 (~'rand [] [:rand])
                 (~'count [] [:count :*])
+                ;; TODO: bug: and and or do not work as we don't expand
                 (~'count-if [a#] `[:count_if ~(symbol->keyword a#)])
                 (~'count-distinct [arg#] `[:count [:distinct ~(symbol->keyword arg#)]])
                 (~'sum [a#] `[:sum ~(symbol->keyword a#)])
+                (~'min [a#] `[:min ~(symbol->keyword a#)])
+                (~'max [a#] `[:max ~(symbol->keyword a#)])
                 (~'avg [a#] `[:avg ~(symbol->keyword a#)])
                 (~'coalesce [& args#] `[:coalesce ~@(map symbol->keyword args#)])
                 (~'date [arg#] `[:date ~(symbol->keyword arg#)])
+                (~'from-unixtime [arg#] `[:from_unixtime ~(symbol->keyword arg#)])
                 (~'cast [arg# type#] `[:cast ~(symbol->keyword arg#) ~(keyword type#)])
                 (~'case-when [& args#] `[:case ~@(map symbol->keyword args#)])
                 (~'+ [a# b#] `[:+ ~(symbol->keyword a#) ~(symbol->keyword b#)])
@@ -123,6 +127,8 @@
                (precedence-merge ~ds {:order-by (mapv order-by-wrap-if-needed
                                                       (expand-expr [~@(mapv symbol->keyword exprs)]))})))
 
+;;; TODO: transmute
+;;; TODO: should be able to redefine columns e.g. (mutate x (+ 1 x))
 ;;; allowing referencing just declared vars by substituting. if we
 ;;; don't want duplication, can use multiple mutates but that will
 ;;; cause nesting
@@ -135,9 +141,11 @@
 
 (defmacro mutate-grouped [ds groups & forms]
   (let [pairs (partition 2 forms)
+        over-params (if (empty? groups)
+                      {}
+                      {:partition-by (mapv symbol->keyword groups)})
         new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
-                                                    [[[:over ~@(mapv (partial named-expr
-                                                                              {:partition-by (mapv symbol->keyword groups)})
+                                                    [[[:over ~@(mapv (partial named-expr over-params)
                                                                      pairs)]]]))]
     `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
                                             (expand-expr ~new-cols))})))
@@ -174,7 +182,6 @@
        (map first)
        (some #{'summarize})))
 
-;;; TODO: should allow over() with no partition by
 ;;; TODO: order by - should influence the order by on the window function
 ;;; TODO: support slice functions for groups
 ;;; TODO: allow creating cols to group on

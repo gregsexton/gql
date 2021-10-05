@@ -241,3 +241,22 @@
     (mutate x 5)
     (mutate y 7)
     (sql/format :inline true))
+
+(-> (table foo)
+    (group [x]
+           (mutate n-sum (sum n)))
+    (group []
+           (mutate n-sum (sum n)))
+    (sql/format :inline true))
+
+;;; TODO:
+(-> (table foo)
+    (group []
+           (order-by z)
+           (mutate n-sum (sum n)))
+    (sql/format :inline true))
+
+;;; TODO:
+(-> (table foo)
+    (mutate n (count-if (and (> y 7) (< x 2))))
+    (sql/format :inline true))
