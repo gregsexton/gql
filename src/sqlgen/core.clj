@@ -243,8 +243,10 @@
   (binding [*ns* (find-ns 'sqlgen.core)]
     (-> (read)
         eval
+        (->> (inform "data structure is"))
         (sql/format :inline true)
         (get 0)
+        (->> (inform "query is"))
         println)))
 
 
