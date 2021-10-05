@@ -47,15 +47,22 @@
         (list? form) [(keyword (first form)) (keyword (nth form 2))]  ;:as should be 2nd
         :else form))
 
+;;; this is used by named-expr and inside e.g. mutate to avoid
+;;; infinite recursion. when a named expression refers to its own name
+;;; it refers to an existing column, not itself.
+(defn replace-with-keyword-deep [needle form]
+  (walk/postwalk (fn [x] (if (= x needle) (keyword (name needle)) x))
+                 form))
+
 (defn named-expr
   ([pair]
    (let [col (first pair)
          expr (second pair)]
-     [expr (keyword col)]))
+     [(replace-with-keyword-deep col expr) (keyword col)]))
   ([over-params pair]
    (let [col (first pair)
          expr (second pair)]
-     [expr over-params (keyword col)])))
+     [(replace-with-keyword-deep col expr) over-params (keyword col)])))
 
 ;;; needed as order-by has the :asc :desc syntax that is inconsistent
 (defn order-by-wrap-if-needed [expr]
@@ -127,14 +134,12 @@
                (precedence-merge ~ds {:order-by (mapv order-by-wrap-if-needed
                                                       (expand-expr [~@(mapv symbol->keyword exprs)]))})))
 
-;;; TODO: transmute
-;;; TODO: should be able to redefine columns e.g. (mutate x (+ 1 x))
-;;; allowing referencing just declared vars by substituting. if we
-;;; don't want duplication, can use multiple mutates but that will
-;;; cause nesting
 (defmacro mutate [ds & forms]
   (let [pairs (partition 2 forms)
-        new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
+        new-cols (m/mexpand-all `(m/symbol-macrolet [~@(->> pairs
+                                                            (map (fn [[x y]]
+                                                                   [x (replace-with-keyword-deep x y)]))
+                                                            (apply concat))]
                                                     ~(mapv named-expr pairs)))]
     `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
                                             (expand-expr ~new-cols))})))
@@ -144,7 +149,10 @@
         over-params (if (empty? groups)
                       {}
                       {:partition-by (mapv symbol->keyword groups)})
-        new-cols (m/mexpand-all `(m/symbol-macrolet [~@forms]
+        new-cols (m/mexpand-all `(m/symbol-macrolet [~@(->> pairs
+                                                            (map (fn [[x y]]
+                                                                   [x (replace-with-keyword-deep x y)]))
+                                                            (apply concat))]
                                                     [[[:over ~@(mapv (partial named-expr over-params)
                                                                      pairs)]]]))]
     `(precedence-merge ~ds {:select (concat (get-selection-cols ~ds)
@@ -160,11 +168,12 @@
       (order-by (rand))
       (slice-head n)))
 
-;;; TODO: naming columns the same as functions causes an infinite loop e.g. sum (sum foo)
-;;; TODO: I should probably rename this - something that captures replace columns
 (defmacro summarize [ds & forms]
   (let [pairs (partition 2 forms)
-        replace-form `{:select (m/symbol-macrolet [~@forms]
+        replace-form `{:select (m/symbol-macrolet [~@(->> pairs
+                                                          (map (fn [[x y]]
+                                                                 [x (replace-with-keyword-deep x y)]))
+                                                          (apply concat))]
                                                   ~(mapv named-expr pairs))}]
     ;; we use precedence-merge to end up wrapping the query as the
     ;; select may have been mutated
@@ -250,16 +259,28 @@
         println)))
 
 
-;;; diff between summarise and select and mutate: select is about
-;;; preds to match existing stuff. it replaces cols, allows renaming
-;;; with :as, but does not allow creating cols from new expressions.
+;;; some design notes:
+
+
+;;; diff between summarise and select and mutate:
+
+;;; select is about preds to match existing stuff. it replaces cols,
+;;; allows renaming with :as, but does not allow creating cols from
+;;; new expressions.
+
 ;;; summarise replaces all cols, it has a different form to make it
 ;;; convenient to create a new set of columns from expressions. most
-;;; useful for summarising. mutate adds to the existing selection with
-;;; a similar form to summarize. summarize and mutate allow referring
-;;; to just created columns. they will resubstitute expressions to
-;;; make this possible. using another summarize or mutate avoids this
-;;; at the cost of nesting.
+;;; useful for, well, summarising.
+
+;;; mutate adds to the existing selection with a similar form to
+;;; summarize.
+
+;;; summarize and mutate allow referring to just created columns. they
+;;; will resubstitute expressions to make this possible. using another
+;;; summarize or mutate avoids this at the cost of extra nesting.
+
+;;; currently there is no transmute because I can't decide on a form
+;;; that feels consistent. you can (summarize a a).
 
 
 ;;; how is this different from dbplyr? don't need a dbi connection.

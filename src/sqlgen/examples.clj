@@ -260,3 +260,34 @@
 (-> (table foo)
     (mutate n (count-if (and (> y 7) (< x 2))))
     (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c)
+    (mutate a (+ 1 a))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c)
+    (mutate a (+ 1 a)
+            b (+ 1 a)
+            c (+ 1 z)
+            d (/ c 2))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c)
+    (summarize a (+ 1 a)
+               b (+ 1 a)
+               c (+ 1 z)
+               d (/ c 2))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (summarize a a
+               b b
+               c (+ a b))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (group [a b c] (summarize))
+    (sql/format :inline true))
