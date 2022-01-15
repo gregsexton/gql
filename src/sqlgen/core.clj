@@ -132,6 +132,7 @@
   `{:from [~(keyword tbl)]
     :select [:*]})
 
+;;; TODO: dropping a column would be particularly helpful
 (defmacro select [ds & exprs]
   `(precedence-merge ~ds {:select [~@(map keyword-or-alias exprs)]}))
 
@@ -143,6 +144,9 @@
                (precedence-merge ~ds {:order-by (mapv order-by-wrap-if-needed
                                                       (expand-expr [~@(mapv symbol->keyword exprs)]))})))
 
+;;; TODO: unify mutate, mutate-grouped, and summarize. They are all
+;;; just defining selection expressions that are named, maybe with
+;;; over, maybe clobbering.
 (defmacro mutate [ds & forms]
   (let [pairs (partition 2 forms)
         new-cols (m/mexpand-all `(m/symbol-macrolet [~@(->> pairs
@@ -222,7 +226,9 @@
               (~'summarize ~'n (~'count)))
        (order-by (~'desc ~'n))))
 
-;;; TODO: would be great to allow more than just =
+;;; TODO: would be great to allow more than just =. the macros should
+;;; eval/expand a list of expressions and wrap in and. any lone keywords
+;;; should expand to (= kw kw) first. how to get the selection cols??
 (defn join [join-type-kw query1 query2 join-cols suffix]
   (let [q1-cols (get-selection-cols query1)
         q2-cols (get-selection-cols query2)
@@ -267,6 +273,8 @@
         (->> (inform "query is"))
         println)))
 
+;;; TODO: unnesting arrays and maps unnest-longer. can we do wider?
+
 
 ;;; some design notes:
 
@@ -289,7 +297,7 @@
 ;;; summarize or mutate avoids this at the cost of extra nesting.
 
 ;;; currently there is no transmute because I can't decide on a form
-;;; that feels consistent. you can (summarize a a).
+;;; that feels consistent. you can (summarize a a) however.
 
 
 ;;; how is this different from dbplyr? don't need a dbi connection.
