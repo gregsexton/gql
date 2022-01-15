@@ -97,6 +97,13 @@
                 ;; maps
                 (~'map-keys [a#] `[:map_keys ~(symbol->keyword a#)])
                 (~'map-values [a#] `[:map_values ~(symbol->keyword a#)])
+                ;; strings
+                (~'s-concat [& args#] `[:concat ~@(map symbol->keyword args#)])
+                (~'length [a#] `[:length ~(symbol->keyword a#)])
+                (~'ltrim [a#] `[:ltrim ~(symbol->keyword a#)])
+                (~'rtrim [a#] `[:rtrim ~(symbol->keyword a#)])
+                (~'trim [a#] `[:trim ~(symbol->keyword a#)])
+                (~'split-part [string# delim# idx#] `[:split_part ~(symbol->keyword string#) ~delim# ~idx#])
                 ;; misc
                 (~'approx-distinct [a#] `[:approx_distinct ~(symbol->keyword a#)])
                 (~'rand [] [:rand])
@@ -106,7 +113,9 @@
                 (~'count-distinct [arg#] `[:count [:distinct ~(symbol->keyword arg#)]])
                 (~'sum [a#] `[:sum ~(symbol->keyword a#)])
                 (~'min [a#] `[:min ~(symbol->keyword a#)])
+                (~'min-by [a# sorter#] `[:min_by ~(symbol->keyword a#) ~(symbol->keyword sorter#)])
                 (~'max [a#] `[:max ~(symbol->keyword a#)])
+                (~'max-by [a# sorter#] `[:max_by ~(symbol->keyword a#) ~(symbol->keyword sorter#)])
                 (~'avg [a#] `[:avg ~(symbol->keyword a#)])
                 (~'coalesce [& args#] `[:coalesce ~@(map symbol->keyword args#)])
                 (~'date [arg#] `[:date ~(symbol->keyword arg#)])
