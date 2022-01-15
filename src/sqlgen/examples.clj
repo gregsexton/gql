@@ -291,3 +291,17 @@
 (-> (table foo)
     (group [a b c] (summarize))
     (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c)
+    (union-all (-> (table bar)
+                   (select a b c)))
+    (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c)
+    (union-all (-> (table bar)
+                   (select a b c)))
+    (mutate d (+ a b))
+    (select a)
+    (sql/format :inline true))

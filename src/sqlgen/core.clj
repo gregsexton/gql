@@ -84,7 +84,7 @@
                 (~'like [a# b#] `[:like ~(symbol->keyword a#) ~(symbol->keyword b#)])
                 (~'not [a#] `[:not ~(symbol->keyword a#)])
                 (~'if-else [cond# b1# b2#] `[:if ~(symbol->keyword cond#) ~(symbol->keyword b1#) ~(symbol->keyword b2#)])
-                ;; TODO: this in only supports literal lists.
+                ;; TODO: this in only supports literal lists. just inner join instead. not in might be useful
                 (~'in [expr# & vals#] `[:in ~(symbol->keyword expr#) [:composite ~@(map symbol->keyword vals#)]])
                 ;; json
                 (~'json-extract [from# path#] `[:json_extract ~(symbol->keyword from#) ~path#])
@@ -262,6 +262,13 @@
         q2 (m/mexpand-all query2)]
     `(join :left-join ~q1 ~q2 ~(mapv symbol->keyword using) ~(or suffix ""))))
 
+;;; we select * from the union so that the query has a select
+;;; statement and can be precedence-merged
+(defn union [& queries]
+  {:select [:*] :from [{:union queries}]})
+
+(defn union-all [& queries]
+  {:select [:*] :from [{:union-all queries}]})
 
 (defn -main [& args]
   (binding [*ns* (find-ns 'sqlgen.core)]
