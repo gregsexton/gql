@@ -305,3 +305,13 @@
     (mutate d (+ a b))
     (select a)
     (sql/format :inline true))
+
+(-> (table foo)
+    (select a b c tags)
+    (unnest-longer tags :as tag)
+    (sql/format :inline true))
+
+(-> (table foo)
+    (select a b kv c)
+    (unnest-longer kv :as k v)
+    (sql/format :inline true))

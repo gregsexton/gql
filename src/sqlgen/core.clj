@@ -270,6 +270,21 @@
 (defn union-all [& queries]
   {:select [:*] :from [{:union-all queries}]})
 
+(defmacro unnest-longer [ds & form]
+  (let [[nested-col unnested-vars]
+        (cond (and (= (count form) 3) (= (second form) :as))
+              (let [[nested-col _ new-unnested-var] form]
+                [(keyword nested-col) [(keyword new-unnested-var)]])
+              (and (= (count form) 4) (= (second form) :as))
+              (let [[nested-col _ new-unnested-key-var new-unnested-vale-var] form]
+                [(keyword nested-col) (mapv keyword [new-unnested-key-var new-unnested-vale-var])])
+              :else (throw (Exception. "Need to provide an :as form to unnest-longer")))]
+    `{:select (vec (concat (remove #{~nested-col} (get-selection-cols ~ds))
+                           ~unnested-vars))
+      :from [~ds]
+      :cross-join [[[:raw ["UNNEST(" ~(name nested-col) ") AS t ("
+                           ~(clojure.string/join "," (map name unnested-vars)) ")"]]]]}))
+
 (defn -main [& args]
   (binding [*ns* (find-ns 'sqlgen.core)]
     (-> (read)
