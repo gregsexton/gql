@@ -2,7 +2,7 @@
   (:require [sqlgen.core :refer :all]
             [honey.sql :as sql]))
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (= ds "<DATEID>")
            (or flag-col
                (= (json-extract-scalar data "$.topic")
@@ -22,7 +22,7 @@
     (limit 100)
     (sql/format :inline true))
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (= ds "<DATEID>")
            (or flag-col
                (= (json-extract-scalar data "$.topic")
@@ -36,7 +36,7 @@
                       n_closed (count-if is-closed)))
     (sql/format :inline true))
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (= ds "<DATEID-2>"))
     (mutate topic (json-extract-scalar data "$.topic"))
     (group [topic] (summarize n (count)))
@@ -44,124 +44,124 @@
     (summarize n (count))
     (sql/format :inline true))
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (= ds "<DATEID-2>"))
     (mutate topic (json-extract-scalar data "$.topic"))
     (count-by topic)
     (sql/format :inline true))
 
-(-> (inner-join (-> (table src_wa_fastdesk_tickets)
+(-> (inner-join (-> (table foo)
                     (select a b c))
-                (-> (table src_wa_fastdesk_tickets)
+                (-> (table foo)
                     (select a d c)))
     (sql/format :inline true))
 
-(let [counts (-> (table src_wa_fastdesk_tickets)
+(let [counts (-> (table foo)
                  (group [topic] (summarize n (count))))]
-  (-> (table src_wa_fastdesk_tickets)
+  (-> (table foo)
       (where (> ds "<DATEID-2>"))
       (select topic data)
       (inner-join counts)
       (sql/format :inline true)))             ;this is how you break queries out and organise them
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (> ds "<DATEID-2>"))
     (select topic data)
-    (left-join (-> (table src_wa_fastdesk_tickets)
+    (left-join (-> (table foo)
                    (group [topic] (summarize n (count)))))   ;this is inlining
     (sql/format :inline true))
 
-(-> (table src_wa_fastdesk_tickets)
+(-> (table foo)
     (where (> ds "<DATEID-2>"))
     (select topic data)
     (inner-join (table foo))           ;this is how you join with an existing table
     (sql/format :inline true))
 
-(-> (table src-wa-fastdesk-tickets)
+(-> (table foo)
     (select id data)
-    (left-join (-> (table src-wa-fastdesk-tickets)
+    (left-join (-> (table foo)
                    (where (> id 5))
                    (select id data))
                :using [id]
                :suffix "_filtered")
     (sql/format :inline true))
 
-(let [users (-> (table wa-support-funnel)
+(let [users (-> (table funnel)
                 (where (>= ds "<DATEID-14>"))
                 (count-by user-id)
                 (order-by (rand))
                 (limit 100))]
   (-> users
-      (left-join (-> (table wa-support-funnel)
-                     (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
+      (left-join (-> (table funnel)
+                     (select user-id event-time event-type analytic-id faq-search-unique-id ticket-id))
                  :using [user-id])
       (sql/format :inline true)
       (get 0)
       println))
 
-(let [users (-> (table wa-support-funnel)
+(let [users (-> (table funnel)
                 (where (>= ds "<DATEID-14>"))
                 (count-by user-id)
                 (order-by (rand))
                 (limit 100))
-      tickets (-> (table src-wa-fastdesk-tickets)
+      tickets (-> (table funnel)
                   (where (= ds "<DATEID>"))
                   (mutate topic (json-extract-scalar data "$.topic"))
                   (select (id :as ticket-id) topic))]
   (-> users
-      (left-join (-> (table wa-support-funnel)
-                     (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
+      (left-join (-> (table funnel)
+                     (select user-id event-time event-type analytic-id faq-search-unique-id ticket-id))
                  :using [user-id])
       (left-join tickets)
       (sql/format :inline true)))
 
-(let [users (-> (table wa-support-funnel)
+(let [users (-> (table funnel)
                 (where (>= ds "<DATEID-14>"))
                 (count-by user-id)
                 (order-by (rand))
                 (limit 100))
-      tickets (-> (table src-wa-fastdesk-tickets)
+      tickets (-> (table foo)
                   (where (= ds "<DATEID>"))
                   (mutate topic (json-extract-scalar data "$.topic"))
                   (select (id :as ticket-id) topic))
-      site-events (-> (table wa-support-funnel-site-events)
+      site-events (-> (table events)
                       (where (>= ds "<DATEID-14>")
                              (= event-type "load")
                              (not= primary_cmsid nil))
-                      (group [whatsapp-analytic-id]
+                      (group [analytic-id]
                              (summarize n-loads (count))))]
   (-> users
-      (left-join (-> (table wa-support-funnel)
-                     (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
+      (left-join (-> (table funnel)
+                     (select user-id event-time event-type analytic-id faq-search-unique-id ticket-id))
                  :using [user-id])
       (left-join tickets :using [ticket-id])
-      (left-join site-events :using [whatsapp-analytic-id])
+      (left-join site-events :using [analytic-id])
       (sql/format :inline true :pretty true)
       (get 0)
       println))
 
 
-(let [users (-> (table wa-support-funnel)
+(let [users (-> (table funnel)
                 (where (>= ds "<DATEID-14>"))
                 (count-by user-id)
                 (order-by (rand))
                 (limit 100))
-      tickets (-> (table src-wa-fastdesk-tickets)
+      tickets (-> (table tickets)
                   (where (= ds "<DATEID>"))
                   (mutate topic (json-extract-scalar data "$.topic"))
                   (select (id :as ticket-id) topic))
-      site-events (-> (table wa-support-funnel-site-events)
+      site-events (-> (table events)
                       (where (>= ds "<DATEID-14>")
                              (= event-type "load"))
-                      (group [whatsapp-analytic-id]
+                      (group [analytic-id]
                              (summarize n-loads (count)
                                         n-real-loads (count-if (not= primary_cmsid nil)))))]
   (-> users
-      (left-join (-> (table wa-support-funnel)
-                     (select user-id event-time event-type whatsapp-analytic-id whatsapp-faq-search-unique-id ticket-id))
+      (left-join (-> (table funnel)
+                     (select user-id event-time event-type analytic-id faq-search-unique-id ticket-id))
                  :using [user-id])
       (left-join tickets :using [ticket-id])
-      (left-join site-events :using [whatsapp-analytic-id])))
+      (left-join site-events :using [analytic-id])))
 
 (-> (table foo)
     (select a b)
@@ -191,11 +191,11 @@
     (mutate n (if-else flag 1 0))
     (sql/format :inline true))
 
-(let [tickets (-> (table src_wa_fastdesk_tickets)
+(let [tickets (-> (table foo)
                   (where (= ds "<DATEID>"))
                   (mutate topic (json-extract-scalar data "$.topic"))
                   (select (id :as ticket-id) topic))]
-  (-> (table wa_support_funnel)
+  (-> (table funnel)
       (where (= ds "<DATEID-1>")
              (= event_type "ticket_creation"))
       (select event_type ticket-id)
