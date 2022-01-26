@@ -11,25 +11,18 @@ If you want to play, something like the following should work.
 ```
 $ lein uberjar # to build a jar
 $ cat query.clj
-(-> (table foo)
-    (where (= ds "2021-01-01")
-           (or flag-col
-               (= (json-extract-scalar data "$.topic")
-                  "some_topic"))
-           (not= (json-extract-scalar data "$.status") nil))
-    (select data (id :as new-name-id))
-    (where (= id "1234"))
-    (where flag-col)
-    (mutate topic (json-extract-scalar data "$.topic")
-            status (json-extract-scalar data "$.status")
-            is-closed (= status "closed"))
-    (mutate not-is-closed (not is-closed))
-    (order-by is-closed
-              (desc status)
-              (rand)
-              (desc (json-extract-scalar data "$.topic")))
-    (limit 100)
-    (sql/format :inline true))
+(-> (table site-events)
+    (where (= ts "2021-01-01")
+           (= event "land_page"))
+    (select user-id load-time)
+    (group [user-id]
+           (summarize avg-load-time (avg load-time)
+                      n-events (count)))
+    (left-join (-> (table dim-users)
+                   (select user-id region)))
+    (group [region]
+           (mutate n-in-region (count)))
+    (slice-sample 5000))
 $ cat query.clj | java -jar path/to/uberjar.jar
 WITH q1 AS (
   SELECT
